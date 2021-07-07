@@ -1,0 +1,51 @@
+samples = ['A', 'B']
+# Implement a rule to align reads to the already indexed assembly using BWA.
+
+rule align_reads:
+        input:
+                assembly_file='data/genome.fa',
+                reads_file='data/samples/{sample}.fastq'
+        output:
+                'results/{sample}.bam'
+        shell:
+		# 'echo {wildcards.sample};'
+                'bwa mem {input.assembly_file} {input.reads_file}  | samtools view -b > {output}'
+
+# We aligned the reads to the reference and generated BAM files. Many analyses require that BAM files are sorted by genomic coordinates, because sorted BAM files can be processed much more easily than unsorted ones. Implement a rule to sort the BAM files with Samtools.
+
+rule sort_bam:
+	input:
+		rules.align_reads.output
+	output:
+		'results/{sample}.sorted.bam'
+	shell:
+		'samtools sort -O bam {input.alignment_file} > {output}'
+
+# Just like we did with the reference assembly, it is common to index alignment files to speed up access to specific regions in the alignment.
+
+rule index_bam:
+	input:
+		rules.sort_bam.output
+	output:
+		'results/{sample}.bam.bai'
+	shell:
+		'samtools index {input.alignment_file} > {output}'
+
+# We aligned reads from two samples (A and B) to the reference assembly, and obtained two sorted and indexed alignment files. We will now call variants from these two files together; the output will be a VCF file.
+
+rule call_variants:
+	input:
+		assembly_file='data/genome.fa',
+		alignment_file_A='results/A.bam.bai',
+	        alignment_file_B='results/B.bam.bai'
+	output:
+		'results/A_B.vcf'
+	params:
+		subrate = 0.001
+	shell:
+		'bcftools mpileup -f {input.assembly_file} {input.alignment_file_A} {input.alignment_file_B} | bcftools call {params.subrate} -mv - > {output}'
+
+# ex 6: BCF tools calls variants using a probabilistic model. An important parameter of this model is the expected substitution rate. We would like to add a parameter to the variant calling rule to easily specify this substitution rate. Add a non-file parameter to the variant calling rule to control prior substitution rate.
+
+# We now have a VCF file containing all variants for our samples. We would now like to quantify each type of substitution (e.g. A->T, C->A, ...) to detect potential biases.
+
